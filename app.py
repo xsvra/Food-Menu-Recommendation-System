@@ -319,9 +319,9 @@ def render_sidebar_button(label, internal_label):
 
 # Tombol navigasi
 st.sidebar.markdown("### Pilih Halaman:")
-render_sidebar_button("Home", "🏠 Home")
-render_sidebar_button("Recommendation", "📝 Rekomendasi Menu")
-render_sidebar_button("Information", "📊 Resource")
+render_sidebar_button("Home", "🏠 Home", use_container_width=True)
+render_sidebar_button("Recommendation", "📝 Rekomendasi Menu", use_container_width=True)
+render_sidebar_button("Information", "📊 Resource", use_container_width=True)
 menu = st.session_state.menu
 
 if menu == "🏠 Home":
