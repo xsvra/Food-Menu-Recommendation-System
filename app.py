@@ -290,11 +290,6 @@ st.set_page_config(
     page_icon="random",
     layout="wide",
     initial_sidebar_state="auto",
-    menu_items={
-        'Get Help': 'https://www.extremelycoolapp.com/help',
-        'Report a bug': "https://www.extremelycoolapp.com/bug",
-        'About': "# This is a header. This is an *extremely* cool app!"
-    }
 )
 
 def render_sidebar_button(label, internal_label):
@@ -319,9 +314,9 @@ def render_sidebar_button(label, internal_label):
 
 # Tombol navigasi
 st.sidebar.markdown("### Pilih Halaman:")
-render_sidebar_button("Home", "🏠 Home", use_container_width=True)
-render_sidebar_button("Recommendation", "📝 Rekomendasi Menu", use_container_width=True)
-render_sidebar_button("Information", "📊 Resource", use_container_width=True)
+render_sidebar_button("Home", "🏠 Home")
+render_sidebar_button("Recommendation", "📝 Rekomendasi Menu")
+render_sidebar_button("Information", "📊 Resource")
 menu = st.session_state.menu
 
 if menu == "🏠 Home":
