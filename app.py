@@ -6,8 +6,9 @@ import numpy as np
 import re
 from scipy.stats import randint
 import plotly.graph_objects as go
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 import os
+import time
 # import base64
 # import streamlit.components.v1 as components
 
@@ -150,12 +151,28 @@ def recommend_menu_demographic(nutri_df, status_gizi, gender, age, activity, top
     ].copy()
 
     # 5. SCORING nutrisi — skor tinggi jika lebih dekat ke target
+    # contoh kasar: tol_karbo = 0.65-0.45 = 0.20, tol_protein = 0.35-0.10 = 0.25, tol_lemak = 0.35-0.20 = 0.15
+    w_cals = 1/0.10   # misal toleransi kalori 10% dari target
+    w_c   = 1/0.20
+    w_p   = 1/0.25
+    w_f   = 1/0.15
+    # normalisasi agar jumlah=1
+    s = w_cals + w_c + w_p + w_f
+    w_cals, w_c, w_p, w_f = w_cals/s, w_c/s, w_p/s, w_f/s
+
     filt['score_raw'] = (
-        abs(filt['kcal'] - kalori_target) * 0.4
-        + abs(filt['protein'] - protein_target) * 0.2
-        + abs(filt['fat'] - lemak_target) * 0.2
-        + abs(filt['carbs'] - karbo_target) * 0.2
+        w_cals*abs(filt['kcal'] - kalori_target)/kalori_target +
+        w_p   *abs(filt['protein'] - protein_target)/protein_target +
+        w_f   *abs(filt['fat'] - lemak_target)/lemak_target +
+        w_c   *abs(filt['carbs'] - karbo_target)/karbo_target
     )
+    
+    # filt['score_raw'] = (
+    #     abs(filt['kcal'] - kalori_target) * 0.4
+    #     + abs(filt['protein'] - protein_target) * 0.2
+    #     + abs(filt['fat'] - lemak_target) * 0.2
+    #     + abs(filt['carbs'] - karbo_target) * 0.2
+    # )
     
     # 5b. Konversi ke skor positif (semakin kecil selisih → makin besar skor)
     filt['score'] = filt['score_raw'].max() - filt['score_raw']
@@ -165,7 +182,7 @@ def recommend_menu_demographic(nutri_df, status_gizi, gender, age, activity, top
     top_candidates = filt[filt['score'] > 0].sort_values(by='score', ascending=False).drop_duplicates('Menu').head(100)
 
 
-    # Ambil top_n menu secara acak dari 30 kandidat terbaik, berbasis skor sebagai bobot
+    # Ambil top_n menu secara acak dari 100 kandidat terbaik, berbasis skor sebagai bobot
     rekom = top_candidates.sample(n=min(top_n, len(top_candidates)), weights='score', replace=False)
 
     return rekom[['Menu', 'image', 'kcal', 'protein', 'fat', 'carbs', 'fibre']]
@@ -308,20 +325,60 @@ render_sidebar_button("Information", "📊 Resource")
 menu = st.session_state.menu
 
 if menu == "🏠 Home":
-    st.title("Welcome to EduNutri")
-    st.markdown("""
-    **Selamat datang di EduNutri!**  
-    Aplikasi edukasional untuk memprediksi status gizi Anda  
-    dan merekomendasikan menu harian yang sehat dan seimbang.  
-    """)
-    # st.image("assets/hero-food.jpg", use_column_width=True)
+    # --- Hero / Welcome ---
+    st.title("EduNutri")
+    st.subheader("“Makan Cerdas, Hidup Sehat.”")
+    st.markdown(
+        """
+        **Selamat datang di EduNutri!**  
+        EduNutri adalah aplikasi edukasi gizi yang membantu Anda **memprediksi status gizi**
+        dan **menyusun rekomendasi menu harian** yang sehat, seimbang, dan mudah diikuti.
+        """
+    )
+
+    # Optional hero image (gunakan placeholder bila perlu)
+    # st.image("assets/hero-food.jpg", use_container_width=True)
+
     st.markdown("---")
-    st.markdown("""
-    **Cara Kerja:**  
-    1. Masukkan data diri (usia, jenis kelamin, tinggi, berat, aktivitas).  
-    2. Pilih menu “Rekomendasi Menu” untuk mendapatkan saran makanan.  
-    3. Lihat “Info Gizi” untuk mempelajari makro dan mikro nutrien.  
-    """)
+
+    # --- Tentang Aplikasi / Value props ---
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("### 🔎 Prediksi Status Gizi")
+        st.write("Hitung BMI & prediksi status gizi untuk memahami kondisi awal Anda.")
+    with col2:
+        st.markdown("### 🥗 Rekomendasi Menu")
+        st.write("Dapatkan saran menu harian yang menyeimbangkan kalori dan makronutrien.")
+    with col3:
+        st.markdown("### 📘 Edukasi Gizi")
+        st.write("Pelajari kebutuhan energi, protein, lemak, karbohidrat, dan serat Anda.")
+
+    st.markdown("---")
+
+    # --- Cara Menggunakan ---
+    st.markdown("## Cara Menggunakan")
+    st.markdown(
+        """
+        1. Buka menu **“Recommendation”** lalu isi data: **usia, jenis kelamin, tinggi, berat,** dan **aktivitas**.  
+        2. Klik **Proses** untuk melihat **status gizi**, **kebutuhan energi**, dan **kebutuhan makronutrien**.  
+        3. Gulir ke bawah untuk melihat **rekomendasi menu harian** beserta **kalori, protein, lemak, karbohidrat, dan serat**.  
+        4. Buka menu **“Information”** untuk ringkasan konsep gizi dan tips penerapan.  
+        """
+    )
+
+    # --- Catatan & Tips ---
+    st.warning(
+        "ℹ️ **Catatan:** Rekomendasi bersifat edukasional dan **bukan** pengganti konsultasi dengan tenaga kesehatan. "
+        "Jika memiliki kondisi medis khusus, sebaiknya berkonsultasi dengan ahli gizi atau dokter."
+    )
+
+    st.info(
+        "💡 **Tips:**\n"
+        "- Ukur berat & tinggi terbaru agar prediksi lebih akurat.\n"
+        "- Pilih tingkat aktivitas harian yang paling mendekati rutinitas Anda.\n"
+        "- Gunakan rekomendasi sebagai panduan—sesuaikan dengan preferensi dan ketersediaan bahan."
+    )
+
     
 
 elif menu == "📝 Rekomendasi Menu" :
@@ -331,6 +388,8 @@ elif menu == "📝 Rekomendasi Menu" :
     # Input Form
     col1, spacer1, spacer2, col2 = st.columns([2, 0.2, 0.2, 3.6])
     
+    # Mulai pengukuran waktu
+    start_time = time.perf_counter()
     # Input Form
     with col1:
         with st.form("input_form"):
@@ -364,12 +423,9 @@ elif menu == "📝 Rekomendasi Menu" :
 
             # Predict status gizi
             status = best_rf.predict(input_scaled)[0]
-            # st.subheader(f"Status Gizi Diprediksi: **{status}**")
 
             # 1) Tampilkan status & BMI
             bmi_user = berat / (tinggi ** 2)
-            # st.write(f"**BMI Anda:** {bmi_user:.1f}")
-            # st.markdown("---")
 
             with col2:
                 # 2) Gauge Chart untuk Kategori BMI
@@ -699,9 +755,12 @@ elif menu == "📝 Rekomendasi Menu" :
                 # Tampilkan gambar
                 img_path = os.path.join('nutrients', 'images', row['image'])
                 if os.path.exists(img_path):
-                    col_img.image(img_path, use_container_width=True)
+                    try:
+                        col_img.image(img_path, use_container_width=True)
+                    except UnidentifiedImageError:
+                        col_img.warning("⚠ Corrupted or unrecognizable image")
                 else:
-                    col_img.write("Image not found")
+                    col_img.warning("⚠ Image not found")
                 # Tampilkan nilai masing‑masing kolom
                 col_menu.markdown(f"**{row['Menu']}**")
                 col_kcal.markdown(f"{row['kcal']} kcal")
@@ -710,12 +769,222 @@ elif menu == "📝 Rekomendasi Menu" :
                 col_fib.markdown(f"{row['fibre']} g")
                 col_carbs.markdown(f"{row['carbs']} g")
 
+            # Selesai pengukuran waktu
+            end_time = time.perf_counter()
+            elapsed_time = end_time - start_time
+
+            # Tampilkan ke pengguna
+            st.success(f"Waktu pemrosesan: {elapsed_time:.3f} detik")
 elif menu == "📊 Resource":
-    st.title("EduNutri: Menu Recommender")
-    st.markdown("""
-    Aplikasi edukasional untuk merekomendasikan menu harian
-    berdasarkan status gizi dan demografi pengguna.
-    """)
+    st.title("Information — EduNutri")
+
+    # ==============================
+    # 1) Definisi Gizi
+    # ==============================
+    st.header("Definisi Gizi")
+    st.markdown(
+        """
+        **Gizi** adalah zat dalam makanan yang dibutuhkan tubuh untuk menunjang pertumbuhan, memperbaiki jaringan,
+        dan menjaga fungsi vital. **Nutrisi** menekankan proses tubuh mencerna, menyerap, dan memanfaatkan zat tersebut.
+
+        Gizi baik menunjang kesehatan, produktivitas, dan pencegahan penyakit, sedangkan gizi buruk dapat menurunkan
+        kualitas hidup dan meningkatkan risiko penyakit.
+        """
+    )
+
+    st.subheader("Gizi pada Remaja (13–18 tahun)")
+    st.markdown(
+        """
+        - Masa **growth spurt** (lonjakan pertumbuhan tinggi/berat badan) → kebutuhan energi & protein sangat tinggi.  
+        - Tantangan: pola makan tidak teratur, fast food, diet ekstrem, anemia defisiensi besi.  
+        - Fokus: cukup energi, protein berkualitas, kalsium, serat, dan pola makan seimbang.
+        """
+    )
+
+    st.subheader("Gizi pada Dewasa (≥19 tahun)")
+    st.markdown(
+        """
+        - Fokus utama: **pemeliharaan** fungsi tubuh & pencegahan penyakit.  
+        - Kebutuhan energi dipengaruhi usia, jenis kelamin, aktivitas, dan kondisi khusus (hamil/menyusui).  
+        - Jaga makronutrisi seimbang, batasi lemak jenuh & trans.
+        """
+    )
+
+    st.markdown("---")
+
+    # ==============================
+    # 2) Makronutrisi
+    # ==============================
+    st.header("Makronutrisi")
+    st.markdown(
+        """
+        - **Karbohidrat**: Sumber energi utama (4 kkal/gram). Pilih karbohidrat kompleks dan berserat.  
+        - **Protein**: Pembentuk & perbaikan jaringan, enzim, hormon, antibodi (4 kkal/gram).  
+        - **Lemak**: Energi padat (9 kkal/gram), membantu penyerapan vitamin A, D, E, K.  
+        - **Serat**: Tidak menghasilkan energi, penting untuk pencernaan dan kontrol gula darah.
+
+        **Anjuran serat**: ≥14 g per 1000 kkal (~25–35 g/hari pada dewasa).
+        """
+    )
+
+    st.markdown("---")
+
+    # ==============================
+    # 3) Kebutuhan & Kecukupan Gizi
+    # ==============================
+    st.header("Kebutuhan & Kecukupan Gizi")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(
+            """
+            **Remaja (13–18 th)**  
+            - Karbohidrat: **45–65%**  
+            - Protein: **10–30%**  
+            - Lemak total: **25–35%**  
+            - Omega-3: **0,6–1,2%**, Omega-6: **5–10%**
+            """
+        )
+    with col2:
+        st.markdown(
+            """
+            **Dewasa (≥19 th)**  
+            - Karbohidrat: **45–65%**  
+            - Protein: **10–35%**  
+            - Lemak total: **20–35%**  
+            - Omega-3: **0,6–1,2%**, Omega-6: **5–10%**
+            """
+        )
+    st.caption("Catatan: Lemak jenuh <10% energi dan lemak trans <1% dari total energi harian.")
+
+    st.markdown("---")
+
+    # ==============================
+    # 4) Tabel AKG Permenkes 2019
+    # ==============================
+    st.subheader("Tabel AKG Remaja & Dewasa (Permenkes 2019)")
+    st.markdown("**Remaja (13–18 tahun)**")
+    akg_remaja = pd.DataFrame({
+        "Kelompok": ["Laki-laki 13–15 th", "Laki-laki 16–18 th",
+                    "Perempuan 13–15 th", "Perempuan 16–18 th"],
+        "Energi (kkal)": [2400, 2650, 2050, 2100],
+        "Protein (g)": [70, 75, 65, 65],
+        "Lemak (g)": [80, 85, 70, 70],
+        "Karbohidrat (g)": [350, 400, 300, 300],
+        "Serat (g)": [34, 37, 29, 29]
+    })
+    st.dataframe(akg_remaja, use_container_width=True)
+
+    st.markdown("**Dewasa (19–64 tahun)**")
+    akg_dewasa = pd.DataFrame({
+        "Kelompok": ["Laki-laki 19–29 th", "Laki-laki 30–49 th", "Laki-laki 50–64 th",
+                    "Perempuan 19–29 th", "Perempuan 30–49 th", "Perempuan 50–64 th"],
+        "Energi (kkal)": [2650, 2550, 2150, 2250, 2150, 1800],
+        "Protein (g)": [65, 65, 65, 60, 60, 60],
+        "Lemak (g)": [75, 70, 60, 65, 60, 50],
+        "Karbohidrat (g)": [430, 415, 340, 360, 340, 280],
+        "Serat (g)": [37, 36, 30, 32, 30, 25]
+    })
+    st.dataframe(akg_dewasa, use_container_width=True)
+
+    st.markdown("---")
+
+    # ==============================
+    # 5) Rumus BMR & Kategori PAL
+    # ==============================
+    st.subheader("Rumus BMR (Mifflin–St Jeor)")
+    st.latex(r'''
+    \text{BMR Pria} = (10 \times \text{BB}) + (6.25 \times \text{TB}) - (5 \times \text{Usia}) + 5
+    ''')
+    st.latex(r'''
+    \text{BMR Wanita} = (10 \times \text{BB}) + (6.25 \times \text{TB}) - (5 \times \text{Usia}) - 161
+    ''')
+    st.caption("Keterangan: BB = berat badan (kg), TB = tinggi badan (cm), Usia = umur (tahun)")
+
+    st.subheader("Kategori Physical Activity Level (PAL)")
+    pal_df = pd.DataFrame({
+        "Kategori": [
+            "Sangat jarang olahraga",
+            "Jarang (1–3x/minggu)",
+            "Sedang (3–5x/minggu)",
+            "Sering (6–7x/minggu)",
+            "Sangat sering (2x/hari)"
+        ],
+        "PAL": [1.2, 1.375, 1.55, 1.725, 1.9]
+    })
+    st.dataframe(pal_df, use_container_width=True)
+
+    st.markdown("---")
+
+    # ==============================
+    # 6) Contoh Soal Cerita
+    # ==============================
+    st.header("Contoh Kasus Perhitungan")
+    st.markdown(
+        """
+        **Soal:**  
+        Andi, laki-laki berusia 25 tahun, memiliki berat badan 70 kg dan tinggi 175 cm.  
+        Ia berolahraga 3–5 kali per minggu (PAL 1.55). Tentukan kebutuhan makronutrien hariannya
+        jika proporsi yang digunakan adalah **Karbohidrat 50%**, **Protein 20%**, dan **Lemak 30%**.
+
+        **Langkah Penyelesaian:**
+
+        1. **Hitung BMR (Mifflin–St Jeor)**  
+        BMR = (10 × 70) + (6.25 × 175) − (5 × 25) + 5  
+        BMR = 700 + 1093.75 − 125 + 5 = **1673.75 kkal**
+
+        2. **Hitung TDEE**  
+           TDEE = BMR × PAL = 1673.75 × 1.55 = **2594.31 kkal**
+
+        3. **Hitung kebutuhan makro**  
+           - Karbo: (50% × 2594.31) / 4 = **324 g**  
+           - Protein: (20% × 2594.31) / 4 = **130 g**  
+           - Lemak: (30% × 2594.31) / 9 ≈ **86 g**  
+
+        **Jawaban:**  
+        Kebutuhan harian Andi ≈ **324 g karbohidrat**, **130 g protein**, **86 g lemak**,
+        ditambah serat ± 30–35 g.
+        """
+    )
+    
+    st.markdown("---")
+
+    # ==============================
+    # 7) FAQ
+    # ==============================
+    st.header("FAQ (Frequently Asked Questions)")
+
+    with st.expander("1. Apakah rekomendasi di EduNutri bisa menggantikan konsultasi dengan ahli gizi?"):
+        st.write(
+            "Tidak. Rekomendasi di EduNutri bersifat edukasional dan bertujuan sebagai panduan umum. "
+            "Untuk kebutuhan spesifik atau kondisi medis tertentu, tetap disarankan berkonsultasi "
+            "dengan ahli gizi atau tenaga kesehatan."
+        )
+
+    with st.expander("2. Apakah data yang saya masukkan disimpan?"):
+        st.write(
+            "Tidak. Semua data yang dimasukkan hanya diproses secara lokal saat aplikasi berjalan "
+            "dan tidak disimpan di server."
+        )
+
+    with st.expander("3. Mengapa hasil perhitungan kebutuhan kalori saya berbeda dari aplikasi lain?"):
+        st.write(
+            "Perbedaan bisa terjadi karena metode perhitungan yang digunakan berbeda. "
+            "EduNutri menggunakan rumus **Mifflin–St Jeor** yang terbukti akurat untuk populasi modern."
+        )
+
+    with st.expander("4. Apakah rekomendasi menu mempertimbangkan alergi makanan?"):
+        st.write(
+            "Versi saat ini belum mendukung filter alergi secara otomatis. "
+            "Pengguna disarankan menyesuaikan menu yang direkomendasikan jika memiliki alergi tertentu."
+        )
+
+    with st.expander("5. Bagaimana jika saya ingin menurunkan berat badan?"):
+        st.write(
+            "Anda dapat mengatur defisit kalori dengan mengurangi asupan harian sekitar 500–1000 kkal "
+            "dari kebutuhan total (TDEE), yang secara umum dapat menurunkan 0,5–1 kg per minggu. "
+            "Pastikan tetap memenuhi kebutuhan protein dan mikronutrien."
+        )
 
 
 st.markdown("---")
