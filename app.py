@@ -532,7 +532,6 @@ elif menu == "📝 Rekomendasi Menu" :
                         tee_max = defisit2
                 else:  # Normal
                     tee_min = tee_max = tee
-                # st.success(f"Rekomendasi kalori harian: {tee_min:.0f} – {tee_max:.0f} kcal")
                 
                 # 5) Rekomendasi AKG Permenkes 2019
                 def get_akg(gender, age):
