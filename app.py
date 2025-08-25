@@ -499,10 +499,10 @@ elif menu == "📝 Rekomendasi Menu" :
             with col_t1:
                 # 2) Hitung BMR (Harris-Benedict dan Mifflin-St Jeor)
                 if jenis_kelamin == "Male":
-                    bmr_hb = 66.5 + (13.75 * berat) + (5 * tinggi * 100) - (6.8 * umur)
+                    bmr_hb = 88.362 + (13.397 * berat) + (4.799 * tinggi * 100) - (5.677 * umur)
                     bmr_msj = (10 * berat) + (6.25 * tinggi * 100) - (5 * umur) + 5
                 else:
-                    bmr_hb = 655 + (9.6 * berat) + (1.8 * tinggi * 100) - (4.7 * umur)
+                    bmr_hb = 447.593 + (9.247 * berat) + (3.098 * tinggi * 100) - (4.330 * umur)
                     bmr_msj = (10 * berat) + (6.25 * tinggi * 100) - (5 * umur) - 161
                 
                 # 3) Hitung TEE berdasarkan PAL
