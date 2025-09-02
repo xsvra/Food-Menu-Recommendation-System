@@ -7,3 +7,5 @@ scikit-learn>=1.0.0
 streamlit
 joblib
 plotly
+Pillow
+reportlab
