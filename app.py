@@ -11,6 +11,18 @@ import os
 import time
 # import base64
 # import streamlit.components.v1 as components
+import io
+import datetime
+# ==== Optional PDF engine (ReportLab) ====
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer, Image as RLImage
+    from reportlab.lib.styles import getSampleStyleSheet
+    REPORTLAB_AVAILABLE = True
+except Exception:
+    REPORTLAB_AVAILABLE = False
+
 
 # ---------------------------------------------
 # 1. Load & Prepare Data + Model (Offline)
@@ -219,7 +231,138 @@ def estimasi_waktu_perubahan_berat(status, berat, berat_min, berat_max, tee, tee
 
     else:
         return (0, 0)
-    
+
+# ---------------------------------------------
+# PDF Helper: Laporan Lengkap (rata kiri + range-aware + error handling gambar)
+# ---------------------------------------------
+def pdf_laporan_lengkap(user_inputs: dict, metrics: dict, df, image_root: str = "nutrients/images"):
+    """
+    - Input & Hasil → tabel 2 kolom, rata kiri, tanpa border
+    - Makro (target) → rata kiri, tanpa border; tampil "min–max" jika tersedia, else single value
+    - Tabel rekomendasi → dengan thumbnail, aman untuk gambar hilang/korup
+    metrics boleh berisi:
+    - single: carb_g, protein_g, fat_g, fiber_g
+    - range : carb_min, carb_max, protein_min, protein_max, fat_min, fat_max, fiber_min, fiber_max
+    """
+    if not REPORTLAB_AVAILABLE:
+        return None
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36
+    )
+    styles = getSampleStyleSheet()
+    story = []
+
+    # ===== Header
+    story.append(Paragraph("Rekomendasi Menu – EduNutri", styles["Heading1"]))
+    story.append(Paragraph(datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), styles["Normal"]))
+    story.append(Spacer(1, 12))
+
+    # Util: K/V table rata kiri, tanpa border
+    def kv_table(rows, col0_width=130):
+        t = Table(rows, colWidths=[col0_width, None], hAlign='LEFT')  # <- left align flowable
+        t.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 10),
+            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),  # cell content left
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ]))
+        return t
+
+    # Util: format rentang jika ada; jika tidak, fallback ke single value
+    def fmt_range(minv, maxv, single=None):
+        def is_num(x): return isinstance(x, (int, float)) and not (x is None)
+        if is_num(minv) and is_num(maxv) and (minv > 0 or maxv > 0):
+            return f"{float(minv):.0f} – {float(maxv):.0f}"
+        if is_num(single):
+            return f"{float(single):.0f}"
+        return "-"
+
+    # ===== Input Pengguna
+    story.append(Paragraph("Input Pengguna", styles["Heading2"]))
+    story.append(kv_table([
+        ["Usia",          f"{user_inputs.get('usia','-')} th"],
+        ["Jenis Kelamin", f"{user_inputs.get('jk','-')}"],
+        ["Tinggi",        f"{user_inputs.get('tb','-')} m"],
+        ["Berat",         f"{user_inputs.get('bb','-')} kg"],
+        ["Aktivitas",     f"{user_inputs.get('pal','-')}"],
+    ]))
+    story.append(Spacer(1, 10))
+
+    # ===== Hasil Perhitungan
+    m = metrics
+    story.append(Paragraph("Hasil Perhitungan", styles["Heading2"]))
+    story.append(kv_table([
+        ["BMI",           f"{m.get('bmi',0):.1f} ({m.get('kategori','-')})"],
+        ["BMR (MSJ)",     f"{m.get('bmr',0):.0f} kcal"],
+        ["TEE",           f"{m.get('tee',0):.0f} kcal"],
+        ["Target Kalori", f"{m.get('target_kalori',0):.0f} kcal/hari"],
+    ]))
+
+    # ===== Makro (target) – rata kiri, tanpa border; range-aware
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("Makro (target)", styles["Heading2"]))
+    story.append(kv_table([
+        ["Karbo (g)",   fmt_range(m.get('carb_min'),   m.get('carb_max'),   m.get('carb_g'))],
+        ["Protein (g)", fmt_range(m.get('protein_min'),m.get('protein_max'),m.get('protein_g'))],
+        ["Lemak (g)",   fmt_range(m.get('fat_min'),    m.get('fat_max'),    m.get('fat_g'))],
+        ["Serat (g)",   fmt_range(m.get('fiber_min'),  m.get('fiber_max'),  m.get('fiber_g'))],
+    ]))
+    story.append(Spacer(1, 12))
+
+    # ===== Tabel Rekomendasi (gambar aman)
+    story.append(Paragraph("Tabel Rekomendasi Menu", styles["Heading2"]))
+    story.append(Spacer(1, 6))
+
+    headers = ["Gambar", "Menu", "kcal", "Protein", "Fat", "Carbs", "Fibre"]
+    data = [headers]
+
+    for _, row in df.iterrows():
+        img_cell = Paragraph("⚠ not found", styles["BodyText"])
+        img_path = os.path.join(image_root, str(row.get("image","")))
+        if os.path.exists(img_path):
+            try:
+                from PIL import Image as PILImage  # local import to avoid global conflict
+                with PILImage.open(img_path) as im:
+                    im.verify()
+                img_cell = RLImage(img_path, width=45, height=45)
+            except Exception:
+                img_cell = Paragraph("⚠ image error", styles["BodyText"])
+
+        data.append([
+            img_cell,
+            str(row.get("Menu","-")),
+            f"{float(row.get('kcal',0)):.0f}",
+            f"{float(row.get('protein',0)):.1f}",
+            f"{float(row.get('fat',0)):.1f}",
+            f"{float(row.get('carbs',0)):.1f}",
+            f"{float(row.get('fibre',0)):.1f}",
+        ])
+
+    tbl = Table(data, repeatRows=1, colWidths=[55, None, 45, 50, 45, 50, 50], hAlign='LEFT')
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN', (2,1), (-1,-1), 'CENTER'),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(tbl)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 # def encode_img_to_base64(img_path):
 #     with open(img_path, "rb") as img_file:
 #         return base64.b64encode(img_file.read()).decode()
@@ -769,6 +912,51 @@ elif menu == "📝 Rekomendasi Menu" :
 
             # Tampilkan ke pengguna
             st.success(f"Waktu pemrosesan: {elapsed_time:.3f} detik")
+
+            # ============ Download: Laporan Lengkap (PDF dengan Gambar) ============
+            # Siapkan DataFrame dengan kolom 'image' + nutrisi
+            try:
+                reco_df_pdf = menu_rec[['image','Menu','kcal','protein','fat','carbs','fibre']].copy()
+            except Exception:
+                reco_df_pdf = None
+
+            if not REPORTLAB_AVAILABLE:
+                st.warning("Fitur unduh PDF membutuhkan paket **reportlab**. Jalankan: `pip install reportlab` di environment.")
+            elif reco_df_pdf is not None and len(reco_df_pdf) > 0:
+                # Hitung target kalori dan makro (pakai titik tengah rentang bila ada)
+                if status == "Normal":
+                    target_kal = tee
+                else:
+                    target_kal = (tee_min + tee_max) / 2 if isinstance(tee_min, (int,float)) and isinstance(tee_max, (int,float)) else tee
+
+                # titik tengah (opsional, kalau mau single target):
+                carb_g   = (karbo_min + karbo_max) / 2
+                protein_g= (protein_min + protein_max) / 2
+                fat_g    = (lemak_min + lemak_max) / 2
+                fiber_g  = (serat_min + serat_max) / 2
+                
+                user_inputs = {"usia": umur, "jk": jenis_kelamin, "tb": tinggi, "bb": berat, "pal": activity}
+                metrics = {
+                    "bmi": bmi_user, "kategori": status, "bmr": bmr_msj, "tee": tee,
+                    "target_kalori": target_kal,
+                    # single (fallback)
+                    "carb_g": carb_g, "protein_g": protein_g, "fat_g": fat_g, "fiber_g": fiber_g,
+                    # range (agar match dengan UI)
+                    "carb_min": karbo_min, "carb_max": karbo_max,
+                    "protein_min": protein_min, "protein_max": protein_max,
+                    "fat_min": lemak_min, "fat_max": lemak_max,
+                    "fiber_min": serat_min, "fiber_max": serat_max
+                }
+
+                pdf_bytes_full = pdf_laporan_lengkap(user_inputs, metrics, reco_df_pdf, image_root="nutrients/images")
+                if pdf_bytes_full is not None:
+                    st.download_button(
+                        label="📥 Download Rekomendasi Menu (PDF)",
+                        data=pdf_bytes_full.getvalue(),
+                        file_name=f"EduNutri_Laporan_{datetime.datetime.now():%Y-%m-%d_%H%M}.pdf",
+                        mime="application/pdf"
+                    )
+
 elif menu == "📊 Resource":
     st.title("Information — EduNutri")
 
